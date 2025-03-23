@@ -3,18 +3,17 @@ import pandas as pd
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
+import logging
 
-# Load the trained model
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 model = joblib.load("random_forest_credit_score.pkl")
-
-# Load the trained columns used for one-hot encoding
 trained_columns = joblib.load("trained_columns.pkl")
 
-# Initialize FastAPI app
 app = FastAPI(title="Credit Score Prediction API",
               description="API for predicting farmer's credit score")
 
-# Define the request schema
 class CreditInput(BaseModel):
     year: str
     country: str
@@ -30,34 +29,51 @@ class CreditInput(BaseModel):
     landQualityScore: int
     pastRainfall: float
     avgTemperature: float
-    creditScore: float
 
-# Function to preprocess input data
 def preprocess_input(data: CreditInput):
-    """Convert input data to DataFrame and apply one-hot encoding."""
-    input_data = pd.DataFrame([data.dict()])  # Convert input to DataFrame
+    input_data = pd.DataFrame([data.dict()])
+    logger.info("\n📌 Raw Input Data:\n%s", input_data.to_string())
 
-    # One-hot encoding for categorical variables
-    input_data = pd.get_dummies(input_data)
+    numerical_cols = ['landSize', 'pastYield', 'annualIncome', 'soilPH',
+                      'nitrogenLevel', 'organicMatterLevel', 'landQualityScore',
+                      'pastRainfall', 'avgTemperature']
+    categorical_cols = ['year', 'country', 'region', 'soilType', 'cropTypes']
 
-    # Align columns with trained model (add missing columns with default value 0)
+    numerical_data = input_data[numerical_cols]
+
+    numerical_data.columns = ['LandSize', 'PastYield', 'Annual Income (₹)', 'SoilPH',
+                             'Nitrogen Level', 'Organic Matter Level', 'Land Quality Score',
+                             'PastRainfall', 'AvgTemperature']
+
+    categorical_data = pd.get_dummies(input_data[categorical_cols],
+                                     columns=categorical_cols,
+                                     prefix=['Year', 'Country', 'Region', 'Soil Type', 'Crop Type'])
+
+    input_data_processed = pd.concat([numerical_data, categorical_data], axis=1)
+
     for col in trained_columns:
-        if col not in input_data.columns:
-            input_data[col] = 0
+        if col not in input_data_processed.columns:
+            input_data_processed[col] = 0
 
-    # Ensure column order is the same as in training
-    input_data = input_data[trained_columns]
+    input_data_processed = input_data_processed[trained_columns]
 
-    return input_data
+    logger.info("\n✅ Processed Input Data (Ready for Prediction):\n%s", input_data_processed.to_string())
+
+    return input_data_processed
 
 @app.post("/predict")
 def predict_credit_score(data: CreditInput):
     """API Endpoint to predict credit score."""
-    processed_data = preprocess_input(data)  # Preprocess input
-    prediction = model.predict(processed_data)[0]  # Make prediction
+    try:
+        processed_data = preprocess_input(data)  # Preprocess input
+        prediction = model.predict(processed_data)[0]  # Make prediction
 
-    return {"predicted_credit_score": round(prediction, 2)}
+        logger.info("\n🎯 Predicted Credit Score: %.2f", prediction)
 
-# Run the API server
+        return {"predicted_credit_score": round(prediction, 2)}
+    except Exception as e:
+        logger.error("Error during prediction: %s", str(e))
+        return {"error": str(e)}
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)

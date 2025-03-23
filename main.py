@@ -75,5 +75,66 @@ def predict_credit_score(data: CreditInput):
         logger.error("Error during prediction: %s", str(e))
         return {"error": str(e)}
 
+@app.post("/predict_formula")
+def predict_credit_score_formula(data: CreditInput):
+    """API Endpoint to calculate credit score using the custom formula."""
+    try:
+        past_yield = data.pastYield
+        annual_income = data.annualIncome
+        land_quality = data.landQualityScore
+        soil_ph = data.soilPH
+        nitrogen_level = data.nitrogenLevel
+        organic_matter = data.organicMatterLevel
+        past_rainfall = data.pastRainfall
+        avg_temp = data.avgTemperature
+        crop_type = data.cropTypes
+
+        regional_avg_yield = 2.5
+        regional_avg_income = 300000
+        regional_avg_rainfall = 800
+        crop_ideal_temp = 22
+
+        yield_score = min((past_yield / regional_avg_yield) * 100, 100)
+        income_score = min((annual_income / regional_avg_income) * 100, 100)
+        land_quality_score = land_quality
+        soil_ph_score = 100 - 20 * abs(soil_ph - 6.5)
+        nitrogen_score = 100 - 30 * abs(nitrogen_level - 2)
+        organic_matter_score = organic_matter * 25
+        rainfall_score = 100 - 2 * abs(past_rainfall - regional_avg_rainfall)
+        temp_score = 100 - 5 * abs(avg_temp - crop_ideal_temp)
+
+        crop_risk_factors = {
+            "Wheat": 1.0,
+            "Rice": 1.0,
+            "Corn": 0.95,
+            "Soybeans": 0.95,
+            "Coffee": 0.85,
+            "Fruits": 0.85,
+            "Barley": 0.9,
+            "Cotton": 0.9,
+            "Vegetables": 0.9,
+            "Sugarcane": 0.9,
+        }
+        crop_risk_factor = crop_risk_factors.get(crop_type, 1.0)
+        weighted_score = (
+            (yield_score * 0.25) +
+            (income_score * 0.20) +
+            (land_quality_score * 0.15) +
+            (soil_ph_score * 0.10) +
+            (nitrogen_score * 0.10) +
+            (organic_matter_score * 0.10) +
+            (rainfall_score * 0.05) +
+            (temp_score * 0.05)
+        )
+
+        credit_score = weighted_score * crop_risk_factor
+
+        logger.info("\n🎯 Formula-Based Credit Score: %.2f", credit_score)
+
+        return {"predicted_credit_score": round(credit_score, 2)}
+    except Exception as e:
+        logger.error("Error during formula-based calculation: %s", str(e))
+        return {"error": str(e)}
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
